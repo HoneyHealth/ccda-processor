@@ -1,0 +1,116 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# commit message files
+commit_msg*.txt
+*_commit_msg.txt
+pr_msg*.txt
+*_pr_msg.txt
+
+# dependencies
+/node_modules
+/.pnp
+.pnp.js
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# local env files
+.env*.local
+.env
+#.env.example
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+credentials.json
+
+# asdf
+.tool-versions
+
+# pycache
+**/__pycache__/
+
+# python virtual environment
+/venv/
+
+# pytest
+.pytest_cache/
+
+# vscode
+.vscode/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+venv/
+ENV/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Project specific
+input/ccda/*
+!input/ccda/.gitkeep
+output/analysis/metrics/*
+!output/analysis/metrics/.gitkeep
+output/analysis/reports/*
+!output/analysis/reports/.gitkeep
+output/reformatted/*
+!output/reformatted/.gitkeep
+output/temp/*
+!output/temp/.gitkeep
+
+# Environment variables
+.env
+
+# Logs
+*.log
+logs/
+
+# OS specific
+.DS_Store
+Thumbs.db
