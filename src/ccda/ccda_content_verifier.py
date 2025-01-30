@@ -3,7 +3,7 @@
 CCDA Reformatting Verification Script
 
 This script:
-1. Randomly selects 20 files from the reformatted directory
+1. Randomly selects files from the reformatted directory
 2. Compares them with their original versions
 3. Reports any differences after removing whitespace
 """
@@ -11,6 +11,7 @@ This script:
 import os
 import random
 import logging
+import argparse
 from pathlib import Path
 from lxml import etree
 import difflib
@@ -56,15 +57,45 @@ def compare_files(original_path, reformatted_path):
     return False, '\n'.join(list(diff)[:10])  # Show first 10 lines of diff
 
 def main():
-    # Paths
-    reformatted_dir = Path("output/reformatted")
-    original_dir = Path("input/ccda")
+    parser = argparse.ArgumentParser(
+        description='Verify content preservation in reformatted CCDA files'
+    )
+    parser.add_argument(
+        '--original-dir',
+        default='input/ccda',
+        help='Directory containing original CCDA files'
+    )
+    parser.add_argument(
+        '--reformatted-dir',
+        default='output/reformatted',
+        help='Directory containing reformatted CCDA files'
+    )
+    parser.add_argument(
+        '--sample-size',
+        type=int,
+        default=20,
+        help='Number of files to randomly sample for verification'
+    )
+    parser.add_argument(
+        '--debug',
+        action='store_true',
+        help='Enable debug logging'
+    )
+    
+    args = parser.parse_args()
+    
+    if args.debug:
+        logger.setLevel(logging.DEBUG)
+    
+    # Convert paths to Path objects and resolve any glob patterns
+    original_dir = Path(args.original_dir.rstrip('/*'))  # Remove trailing /* if present
+    reformatted_dir = Path(args.reformatted_dir)
     
     # Get all reformatted files
     reformatted_files = list(reformatted_dir.glob("*.xml"))
     
-    # Randomly select 20 files
-    sample_size = min(20, len(reformatted_files))
+    # Randomly select files
+    sample_size = min(args.sample_size, len(reformatted_files))
     selected_files = random.sample(reformatted_files, sample_size)
     
     # Compare each file

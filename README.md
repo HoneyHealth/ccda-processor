@@ -23,7 +23,12 @@ A comprehensive toolkit for processing, analyzing, and reformatting Clinical Doc
    pip install -r requirements.txt
    ```
 
-3. Copy CCDA files to process into `input/ccda/`
+3. Create required directories:
+   ```bash
+   mkdir -p input/ccda output/analysis/metrics output/reformatted output/temp
+   ```
+
+4. Copy CCDA files to process into `input/ccda/`
 
 ## End-to-End Workflow
 
@@ -32,9 +37,10 @@ First, scan all CCDA files to identify their sections and build a comprehensive 
 
 ```bash
 python src/ccda/ccda_section_analyzer.py \
-    --input-dir input/ccda \
+    --input-dir input/ccda/* \
     --output-file output/analysis/metrics/section_analysis.json \
     --batch-size 15 \
+    --memory-limit 8000 \
     --debug
 ```
 
@@ -45,13 +51,12 @@ This will:
 - Generate a detailed section analysis report
 
 ### Step 2: Generate Configuration
-Based on the section analysis, generate a configuration file that defines section weights and scoring criteria:
+Generate a configuration file that defines section weights and scoring criteria:
 
 ```bash
 python src/ccda/ccda_config_generator.py \
-    --section-analysis output/analysis/metrics/section_analysis.json \
-    --output-file output/analysis/metrics/ccda_config.json \
-    --min-frequency 0.1
+    --analysis-file output/analysis/metrics/section_analysis.json \
+    --output-file output/analysis/metrics/ccda_config.json
 ```
 
 This will:
@@ -64,31 +69,34 @@ Process all CCDA files to identify the most information-rich documents:
 
 ```bash
 python src/ccda/ccda_information_analyzer.py \
-    --input-dir input/ccda \
+    --input-dir input/ccda/* \
     --output-file output/analysis/metrics/analysis.json \
-    --batch-size 15 \
+    --checkpoint-dir output/temp/analysis_checkpoints \
+    --batch-size 100 \
     --memory-limit 8000 \
     --debug
 ```
 
 This will:
 - Score each file based on:
-  - Number of entries per section
-  - Presence of coded elements
-  - Text content richness
+  - Number of entries per section (weight: 0.5 per entry)
+  - Presence of coded elements (weight: 0.3 per code)
+  - Text content richness (weight: 0.1 per word)
   - Section completeness
 - Generate a ranked list of files by information score
+- Create checkpoints in `output/temp/analysis_checkpoints` for recovery
+- Merge results into a final analysis file
 
 ### Step 4: Reformat Selected Files
 Reformat the most information-rich files for better readability:
 
 ```bash
 python src/ccda/ccda_xml_reformatter.py \
+    --output-dir output/reformatted \
     --analysis-file output/analysis/metrics/analysis.json \
     --top-n 1500 \
-    --output-dir output/reformatted \
-    --batch-size 10 \
-    --memory-limit 6000 \
+    --batch-size 100 \
+    --memory-limit 8000 \
     --debug
 ```
 
@@ -102,76 +110,25 @@ This will:
 Verify that the reformatting process preserved all content:
 
 ```bash
-python src/ccda/ccda_content_verifier.py
+python src/ccda/ccda_content_verifier.py \
+    --original-dir input/ccda/* \
+    --reformatted-dir output/reformatted \
+    --sample-size 200 \
+    --debug
 ```
 
 This will:
-- Randomly select 20 files
+- Randomly select files for verification
 - Compare original and reformatted versions
 - Verify no content was lost or modified
 - Generate a verification report
-
-## Script Details
-
-### CCDA Section Analyzer
-```bash
-python src/ccda/ccda_section_analyzer.py --help
-```
-Options:
-- `--input-dir`: Directory containing CCDA files
-- `--output-file`: Output JSON file for section analysis
-- `--batch-size`: Number of files to process in each batch
-- `--memory-limit`: Memory limit in MB
-- `--debug`: Enable debug logging
-
-### CCDA Configuration Generator
-```bash
-python src/ccda/ccda_config_generator.py --help
-```
-Options:
-- `--section-analysis`: Input section analysis JSON file
-- `--output-file`: Output configuration JSON file
-- `--min-frequency`: Minimum section frequency threshold
-
-### CCDA Information Analyzer
-```bash
-python src/ccda/ccda_information_analyzer.py --help
-```
-Options:
-- `--input-dir`: Directory containing CCDA files
-- `--output-file`: Output analysis JSON file
-- `--batch-size`: Number of files to process in each batch
-- `--memory-limit`: Memory limit in MB
-- `--debug`: Enable debug logging
-
-### CCDA XML Reformatter
-```bash
-python src/ccda/ccda_xml_reformatter.py --help
-```
-Options:
-- `--analysis-file`: Analysis results JSON file
-- `--top-n`: Number of top files to process
-- `--output-dir`: Output directory for reformatted files
-- `--batch-size`: Number of files to process in each batch
-- `--memory-limit`: Memory limit in MB
-- `--debug`: Enable debug logging
-
-### CCDA Content Verifier
-```bash
-python src/ccda/ccda_content_verifier.py --help
-```
-Options:
-- Uses default paths:
-  - Original files: `input/ccda/`
-  - Reformatted files: `output/reformatted/`
 
 ## Output Structure
 
 - `output/analysis/metrics/`: Contains analysis results
   - `section_analysis.json`: Detailed section analysis
-  - `ccda_config.json`: Generated configuration
   - `analysis.json`: Information richness analysis
-- `output/analysis/reports/`: Generated reports and summaries
+- `output/analysis/checkpoints/`: Temporary checkpoints during analysis
 - `output/reformatted/`: Reformatted CCDA XML files
 - `output/temp/`: Temporary files (cleared between runs)
 

@@ -42,9 +42,9 @@ CCDA_NS = {
 class CCDAAnalyzer:
     """Analyzes CCDA XML files for information richness."""
     
-    def __init__(self, checkpoint_dir: str = 'analysis_checkpoints'):
+    def __init__(self, checkpoint_dir: str = 'output/temp/analysis_checkpoints'):
         self.checkpoint_dir = Path(checkpoint_dir)
-        self.checkpoint_dir.mkdir(exist_ok=True)
+        self.checkpoint_dir.mkdir(exist_ok=True, parents=True)
         self.results = {}
         self.current_batch = 0
         self.processed_files = set()
@@ -224,6 +224,11 @@ def main():
         help='Output JSON file for analysis results'
     )
     parser.add_argument(
+        '--checkpoint-dir',
+        default='output/temp/analysis_checkpoints',
+        help='Directory for storing analysis checkpoints'
+    )
+    parser.add_argument(
         '--batch-size',
         type=int,
         default=15,
@@ -246,7 +251,7 @@ def main():
     if args.debug:
         logger.setLevel(logging.DEBUG)
     
-    analyzer = CCDAAnalyzer()
+    analyzer = CCDAAnalyzer(checkpoint_dir=args.checkpoint_dir)
     analyzer.analyze_directory(
         args.input_dir,
         args.output_file,
