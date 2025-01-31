@@ -113,7 +113,42 @@ This will:
   - Patient information from both sources
   - Latest glucose data timestamps
 
-### Step 5: Reformat Selected Files
+### Step 5: Upload Glucose Data to S3
+For patients with glucose data matches, export their readings to CSV files and upload to S3:
+
+```bash
+python src/ccda/ccda_glucose_data_uploader.py \
+    --matches-file output/analysis/metrics/patient_matches.json \
+    --s3-bucket hh-protege-sample-bucket-1 \
+    --time-range 365 \
+    --debug
+```
+
+This will:
+- Process all matched patients with glucose data
+- For each patient:
+  - Query their glucose readings from DynamoDB (GlucoseDataRawV3 table)
+  - Create a CSV file containing:
+    - systemTime
+    - dataSource
+    - displayTime
+    - value
+    - transmitterTime
+    - isTimeChange
+  - Upload the CSV to S3 in device-specific folders:
+    - Dexcom data: `device/cgm_dexcom/`
+    - Freestyle Libre data: `device/cgm_freestyle_libre/`
+- Track and report:
+  - Memory usage
+  - Processing progress
+  - Success/failure statistics
+
+The script uses:
+- DynamoDB in us-east-1 for glucose data
+- S3 in us-west-2 for CSV storage
+- Temporary local storage for CSV generation
+
+### Step 6: Reformat Selected Files
 Reformat the most information-rich files for better readability:
 
 ```bash
@@ -132,7 +167,7 @@ This will:
 - Preserve all original content
 - Process files in memory-efficient batches
 
-### Step 6: Verify Content Preservation
+### Step 7: Verify Content Preservation
 Verify that the reformatting process preserved all content:
 
 ```bash
