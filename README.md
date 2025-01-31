@@ -7,6 +7,7 @@ A comprehensive toolkit for processing, analyzing, and reformatting Clinical Doc
 - **CCDA Analysis**: Analyze CCDA files for information richness and content structure
 - **XML Reformatting**: Improve readability of CCDA files while preserving content
 - **Section Analysis**: Detailed analysis of CCDA sections and their contents
+- **Patient Matching**: Match CCDA patients with records in OpenSearch and check their glucose data
 - **Memory Efficient**: Batch processing with memory monitoring
 - **Content Verification**: Tools to verify content preservation during processing
 
@@ -87,7 +88,32 @@ This will:
 - Create checkpoints in `output/temp/analysis_checkpoints` for recovery
 - Merge results into a final analysis file
 
-### Step 4: Reformat Selected Files
+### Step 4: Match Patients with Records
+Match patients from the most information-rich CCDA files with OpenSearch records and check their glucose data:
+
+```bash
+python src/ccda/ccda_patient_matcher.py \
+    --analysis-file output/analysis/metrics/analysis.json \
+    --top-n 100 \
+    --output-file output/analysis/metrics/patient_matches.json \
+    --opensearch-endpoint your-opensearch-endpoint \
+    --region us-east-1 \
+    --debug
+```
+
+This will:
+- Process the top N most information-rich CCDA files
+- Extract patient demographics (first name, last name, DOB)
+- Search for matching patients in OpenSearch using:
+  - Exact match on DOB
+  - Fuzzy matching on names
+- Check DynamoDB for glucose data records
+- Generate a detailed matching report including:
+  - Match statistics
+  - Patient information from both sources
+  - Latest glucose data timestamps
+
+### Step 5: Reformat Selected Files
 Reformat the most information-rich files for better readability:
 
 ```bash
@@ -106,7 +132,7 @@ This will:
 - Preserve all original content
 - Process files in memory-efficient batches
 
-### Step 5: Verify Content Preservation
+### Step 6: Verify Content Preservation
 Verify that the reformatting process preserved all content:
 
 ```bash
@@ -128,6 +154,7 @@ This will:
 - `output/analysis/metrics/`: Contains analysis results
   - `section_analysis.json`: Detailed section analysis
   - `analysis.json`: Information richness analysis
+  - `patient_matches.json`: Patient matching results
 - `output/analysis/checkpoints/`: Temporary checkpoints during analysis
 - `output/reformatted/`: Reformatted CCDA XML files
 - `output/temp/`: Temporary files (cleared between runs)
