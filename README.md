@@ -113,7 +113,51 @@ This will:
   - Patient information from both sources
   - Latest glucose data timestamps
 
-### Step 5: Upload Glucose Data to S3
+### Step 5: Upload Original EHR CCDA Files to S3
+Upload the original CCDA XML files for the top N most information-rich patients to S3:
+
+```bash
+python src/ccda/ccda_ehr_data_uploader.py \
+    --analysis-file output/analysis/metrics/analysis.json \
+    --s3-bucket hh-protege-sample-bucket-1 \
+    --top-n 100 \
+    --s3-folder ehr/ \
+    --debug
+```
+
+This will:
+- Read the analysis results from analysis.json
+- Sort patients by their information richness score
+- Take the top N most information-rich patients
+- Upload their original CCDA XML files to S3:
+  - Files are stored in the specified S3 folder (default: ehr/)
+  - Original filenames are preserved
+- Track and report:
+  - Memory usage
+  - Processing progress
+  - Success/failure statistics
+
+Arguments:
+- `--analysis-file`: Path to the analysis.json file containing information richness scores
+- `--s3-bucket`: Name of the S3 bucket for XML upload
+- `--top-n`: Number of top patients to process (must be positive)
+- `--s3-folder`: S3 folder for uploads (default: ehr/)
+- `--debug`: Enable debug logging
+
+Features:
+- Memory-efficient processing
+- Progress tracking with tqdm
+- Detailed logging with memory usage stats
+- Robust error handling
+- Configurable S3 folder structure
+
+The script uses:
+- S3 in us-west-2 for XML storage
+- Configurable S3 folder for organization
+- Input validation for all parameters
+- Automatic error recovery and continuation
+
+### Step 6: Upload Glucose Data to S3
 For patients with glucose data matches, export their readings to CSV files and upload to S3:
 
 ```bash
@@ -148,7 +192,10 @@ The script uses:
 - S3 in us-west-2 for CSV storage
 - Temporary local storage for CSV generation
 
-### Step 6: Reformat Selected Files
+
+
+
+### Optional Step: Reformat Selected Files for Sanity Check
 Reformat the most information-rich files for better readability:
 
 ```bash
@@ -167,7 +214,7 @@ This will:
 - Preserve all original content
 - Process files in memory-efficient batches
 
-### Step 7: Verify Content Preservation
+### Optional Step: Verify Content Preservation
 Verify that the reformatting process preserved all content:
 
 ```bash
