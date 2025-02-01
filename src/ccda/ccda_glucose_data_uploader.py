@@ -91,29 +91,35 @@ class GlucoseDataUploader:
             f"- VMS: {memory_info.vms / 1024 / 1024:.2f} MB"
         )
 
-    def _get_time_range(self) -> tuple[str, str]:
-        """Calculate the time range for data extraction.
+    def _get_time_range(self, latest_record_time: str) -> tuple[str, str]:
+        """Calculate the time range for data extraction based on latest record time.
         
+        Args:
+            latest_record_time: The patient's latest glucose record timestamp
+            
         Returns:
             Tuple of (start_time, end_time) in ISO format
         """
-        end_time = datetime.now()
+        # Parse the latest record time as the end time
+        end_time = datetime.fromisoformat(latest_record_time.replace('Z', '+00:00'))
+        # Calculate start time by going back time_range_days from the latest record
         start_time = end_time - timedelta(days=self.time_range_days)
         return (
             start_time.strftime("%Y-%m-%dT%H:%M:%S"),
             end_time.strftime("%Y-%m-%dT%H:%M:%S")
         )
 
-    def query_patient_data(self, user_id: str) -> List[Dict]:
+    def query_patient_data(self, user_id: str, latest_record_time: str) -> List[Dict]:
         """Query glucose data for a specific patient within the time range.
         
         Args:
             user_id: The user's ID to query
+            latest_record_time: The patient's latest glucose record timestamp
             
         Returns:
             List of glucose readings
         """
-        start_time, end_time = self._get_time_range()
+        start_time, end_time = self._get_time_range(latest_record_time)
         
         try:
             response = self.table.query(
@@ -141,7 +147,7 @@ class GlucoseDataUploader:
                 )
                 items.extend(response['Items'])
             
-            logger.info(f"Retrieved {len(items)} records for user {user_id}")
+            logger.info(f"Retrieved {len(items)} records for user {user_id} from {start_time} to {end_time}")
             return items
         
         except ClientError as e:
@@ -248,57 +254,110 @@ class GlucoseDataUploader:
             matches_file: Path to the patient_matches.json file
         """
         try:
-            with open(matches_file, 'r') as f:
-                matches_data = json.load(f)
+            with open(matches_file) as f:
+                data = json.load(f)
+            
+            # Extract matches list and metadata
+            matches = data.get('matches', [])
+            total_matches = len(matches)
+            
+            # Filter patients with glucose data upfront
+            glucose_patients = [m for m in matches if m.get('glucose_data', {}).get('has_data', False)]
+            patients_with_glucose = len(glucose_patients)
+            
+            if patients_with_glucose == 0:
+                logger.warning("No patients found with glucose data")
+                return
+            
+            logger.info(f"\nProcessing Status:")
+            logger.info(f"- Total matches found: {total_matches}")
+            logger.info(f"- Patients with glucose data: {patients_with_glucose}")
+            logger.info(f"- Time range: {self.time_range_days} days\n")
+            
+            # Create a temporary directory for CSV files
+            with tempfile.TemporaryDirectory() as temp_dir:
+                # Initialize progress bar
+                progress = tqdm(
+                    glucose_patients,
+                    desc="Processing glucose data",
+                    unit="patient",
+                    total=patients_with_glucose
+                )
+                
+                for match_data in progress:
+                    self.processed_patients += 1
+                    
+                    # Extract patient information
+                    ccda_patient = match_data.get('ccda_patient', {})
+                    glucose_data = match_data.get('glucose_data', {})
+                    opensearch_match = match_data.get('opensearch_match', {})
+                    
+                    # Get patient ID and name
+                    source_file = ccda_patient.get('source_file', '')
+                    patient_id = source_file.split('/')[-1].split('.')[0] if source_file else None
+                    patient_name = f"{ccda_patient.get('firstName', '')} {ccda_patient.get('lastName', '')}".strip()
+                    
+                    # Update progress description
+                    progress.set_description(f"Processing {patient_name or patient_id or 'Unknown'}")
+                    
+                    if not patient_id:
+                        progress.write(f"⚠️  Skipping patient: No source file found")
+                        continue
+                    
+                    try:
+                        # Verify we have all required data
+                        latest_record_time = glucose_data.get('latest_record_time')
+                        if not latest_record_time:
+                            progress.write(f"⚠️  Skipping {patient_id}: No latest record time")
+                            continue
+                            
+                        user_id = opensearch_match.get('patientId')
+                        if not user_id:
+                            progress.write(f"⚠️  Skipping {patient_id}: No OpenSearch patient ID")
+                            continue
+                        
+                        # Query glucose data using latest record time
+                        glucose_readings = self.query_patient_data(user_id, latest_record_time)
+                        
+                        if not glucose_readings:
+                            progress.write(f"⚠️  No glucose readings found for {patient_id}")
+                            continue
+                        
+                        # Update progress with record count
+                        actual_count = len(glucose_readings)
+                        progress.set_postfix({
+                            'records': actual_count
+                        })
+                        
+                        # Generate CSV file
+                        csv_path = os.path.join(temp_dir, f"{patient_id}_glucose.csv")
+                        self.write_csv(glucose_readings, csv_path)
+                        
+                        # Upload to S3
+                        s3_key = f"{patient_id}_glucose.csv"
+                        self.upload_to_s3(csv_path, s3_key, glucose_readings)
+                        
+                        # Update progress with success
+                        progress.write(f"✅ {patient_id}: Successfully processed {actual_count} records")
+                        
+                    except Exception as e:
+                        progress.write(f"❌ Error processing {patient_id}: {str(e)}")
+                        continue
+                
+                progress.close()
+            
+            # Log final stats with success rate
+            success_rate = (self.successful_uploads / patients_with_glucose * 100) if patients_with_glucose > 0 else 0
+            logger.info("\nProcessing Summary:")
+            logger.info(f"- Patients with glucose data: {patients_with_glucose}")
+            logger.info(f"- Successfully processed: {self.successful_uploads}")
+            logger.info(f"- Failed to process: {self.failed_uploads}")
+            logger.info(f"- Success rate: {success_rate:.1f}%")
+            self._log_memory_usage("Final")
+            
         except Exception as e:
-            logger.error(f"Error reading matches file: {str(e)}")
-            return
-
-        matches = matches_data.get('matches', [])
-        total_matches = len(matches)
-        logger.info(f"\nStarting processing of {total_matches} patient matches")
-        self._log_memory_usage("Before Processing")
-        
-        # Create a temporary directory for CSV files
-        with tempfile.TemporaryDirectory() as temp_dir:
-            for match in tqdm(matches, desc="Processing patients"):
-                # Skip if patient doesn't have glucose data
-                if not match.get('glucose_data', {}).get('has_data', False):
-                    continue
-
-                self.processed_patients += 1
-                user_id = match['opensearch_match']['patientId']
-                source_file = match['ccda_patient']['source_file']
-                
-                # Generate CSV filename from source XML filename
-                csv_filename = Path(source_file).stem + '.csv'
-                temp_csv_path = os.path.join(temp_dir, csv_filename)
-                
-                try:
-                    # Get patient's glucose data
-                    glucose_data = self.query_patient_data(user_id)
-                    
-                    # Write to CSV
-                    self.write_csv(glucose_data, temp_csv_path)
-                    
-                    # Upload to S3 with appropriate prefix
-                    if os.path.exists(temp_csv_path):
-                        self.upload_to_s3(temp_csv_path, csv_filename, glucose_data)
-                    
-                    # Log memory usage every 100 patients
-                    if self.processed_patients % 100 == 0:
-                        self._log_memory_usage(f"After {self.processed_patients} patients")
-                    
-                except Exception as e:
-                    logger.error(f"Error processing patient {user_id}: {str(e)}")
-                    continue
-
-        # Log final statistics
-        self._log_memory_usage("After Processing")
-        logger.info(f"\nProcessing complete:")
-        logger.info(f"- Total patients processed: {self.processed_patients}")
-        logger.info(f"- Successful uploads: {self.successful_uploads}")
-        logger.info(f"- Failed uploads: {self.failed_uploads}")
+            logger.error(f"Error processing matches file: {str(e)}")
+            raise
 
 def main():
     """Main entry point for the script."""
