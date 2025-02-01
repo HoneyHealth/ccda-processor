@@ -42,12 +42,23 @@ CCDA_NS = {
 class CCDAAnalyzer:
     """Analyzes CCDA XML files for information richness."""
     
-    def __init__(self, checkpoint_dir: str = 'output/temp/analysis_checkpoints'):
+    def __init__(self, checkpoint_dir: str = 'output/temp/analysis_checkpoints',
+                 config_file: str = 'output/analysis/metrics/ccda_config.json'):
         self.checkpoint_dir = Path(checkpoint_dir)
         self.checkpoint_dir.mkdir(exist_ok=True, parents=True)
         self.results = {}
         self.current_batch = 0
         self.processed_files = set()
+        
+        # Load section configuration
+        try:
+            with open(config_file) as f:
+                self.config = json.load(f)
+            logger.info(f"Loaded section weights from {config_file}")
+        except Exception as e:
+            logger.error(f"Error loading config file {config_file}: {str(e)}")
+            self.config = {"sections": {}}
+        
         self.load_checkpoints()
     
     def load_checkpoints(self):
@@ -95,24 +106,56 @@ class CCDAAnalyzer:
             logger.info(f"   Unique Sections: {metrics['unique_sections']}")
     
     def calculate_section_score(self, section_elem: etree._Element) -> float:
-        """Calculate a score for a single section."""
+        """
+        Calculate a score for a single section using configuration weights.
+        Prioritizes sections with high value for ML/LLM training.
+        """
         try:
             score = 0.0
             
-            # Count entries (weight: 0.5 per entry)
+            # Get section template ID
+            template_ids = section_elem.xpath('.//h:templateId/@root', namespaces=CCDA_NS)
+            if not template_ids:
+                return 0.0
+                
+            section_id = template_ids[0]
+            section_config = self.config.get("sections", {}).get(section_id, {})
+            
+            # Base weight from configuration (default: 0.2 if not found)
+            base_weight = section_config.get("weight", 0.2)
+            
+            # Count entries
             entries = section_elem.xpath('.//h:entry', namespaces=CCDA_NS)
-            score += len(entries) * 0.5
+            entry_score = len(entries) * 0.3  # Reduced from 0.5
             
-            # Check for coded elements (weight: 0.3 per code)
+            # Check for coded elements
             coded_elements = section_elem.xpath('.//*[@code]', namespaces=CCDA_NS)
-            score += len(coded_elements) * 0.3
+            coded_score = len(coded_elements) * 0.2  # Reduced from 0.3
             
-            # Analyze text content (weight: 0.1 per word)
+            # Analyze text content (more weight for narrative content)
             text_elements = section_elem.xpath('.//h:text//text()', namespaces=CCDA_NS)
             text_content = ' '.join(text for text in text_elements if text.strip())
-            score += len(text_content.split()) * 0.1
+            word_count = len(text_content.split())
             
-            return score
+            # Text length bonus based on thresholds
+            if word_count > 800:
+                text_score = 0.5  # Increased weight for rich narrative
+            elif word_count > 300:
+                text_score = 0.3
+            elif word_count > 50:
+                text_score = 0.1
+            else:
+                text_score = word_count * 0.001
+            
+            # Combined score using section weight
+            raw_score = (entry_score + coded_score + text_score)
+            final_score = raw_score * base_weight
+            
+            # Bonus for sections with both narrative and structured data
+            if word_count > 300 and len(coded_elements) > 15:
+                final_score *= 1.2  # 20% bonus
+            
+            return round(final_score, 3)
             
         except Exception as e:
             logger.error(f"Error calculating section score: {str(e)}")
@@ -124,6 +167,7 @@ class CCDAAnalyzer:
             metrics = {
                 'file_size': os.path.getsize(file_path),
                 'section_scores': defaultdict(float),
+                'section_details': defaultdict(dict),  # New: store detailed metrics
                 'total_score': 0.0,
                 'unique_sections': 0,
                 'error': None
@@ -139,6 +183,15 @@ class CCDAAnalyzer:
                         section_id = template_ids[0]
                         section_score = self.calculate_section_score(elem)
                         metrics['section_scores'][section_id] = section_score
+                        
+                        # Store detailed metrics for analysis
+                        text_elements = elem.xpath('.//h:text//text()', namespaces=CCDA_NS)
+                        text_content = ' '.join(text for text in text_elements if text.strip())
+                        metrics['section_details'][section_id] = {
+                            'word_count': len(text_content.split()),
+                            'coded_elements': len(elem.xpath('.//*[@code]', namespaces=CCDA_NS)),
+                            'entries': len(elem.xpath('.//h:entry', namespaces=CCDA_NS))
+                        }
                 
                 # Clear element to free memory
                 elem.clear()
@@ -229,6 +282,11 @@ def main():
         help='Directory for storing analysis checkpoints'
     )
     parser.add_argument(
+        '--config-file',
+        default='output/analysis/metrics/ccda_config.json',
+        help='Path to CCDA section configuration file with weights'
+    )
+    parser.add_argument(
         '--batch-size',
         type=int,
         default=15,
@@ -251,7 +309,10 @@ def main():
     if args.debug:
         logger.setLevel(logging.DEBUG)
     
-    analyzer = CCDAAnalyzer(checkpoint_dir=args.checkpoint_dir)
+    analyzer = CCDAAnalyzer(
+        checkpoint_dir=args.checkpoint_dir,
+        config_file=args.config_file
+    )
     analyzer.analyze_directory(
         args.input_dir,
         args.output_file,

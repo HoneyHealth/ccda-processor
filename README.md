@@ -72,6 +72,7 @@ Process all CCDA files to identify the most information-rich documents:
 python src/ccda/ccda_information_analyzer.py \
     --input-dir input/ccda/* \
     --output-file output/analysis/metrics/analysis.json \
+    --config-file output/analysis/metrics/ccda_config.json \
     --checkpoint-dir output/temp/analysis_checkpoints \
     --batch-size 100 \
     --memory-limit 8000 \
@@ -79,14 +80,36 @@ python src/ccda/ccda_information_analyzer.py \
 ```
 
 This will:
-- Score each file based on:
-  - Number of entries per section (weight: 0.5 per entry)
-  - Presence of coded elements (weight: 0.3 per code)
-  - Text content richness (weight: 0.1 per word)
-  - Section completeness
+- Score each file based on configuration weights and:
+  - Section importance for ML/LLM training
+  - Rich narrative content (weighted by section)
+  - Presence of coded elements
+  - Number of entries
+  - Combined narrative and structured data bonus
+- Use section weights from the configuration file for:
+  - Clinical notes and assessments
+  - Professional observations
+  - Procedure details
+  - Diagnostic information
 - Generate a ranked list of files by information score
 - Create checkpoints in `output/temp/analysis_checkpoints` for recovery
 - Merge results into a final analysis file
+
+Arguments:
+- `--input-dir`: Directory containing CCDA XML files
+- `--output-file`: Path for the analysis results JSON file
+- `--config-file`: Path to the configuration file with section weights
+- `--checkpoint-dir`: Directory for storing analysis checkpoints
+- `--batch-size`: Number of files to process in each batch
+- `--memory-limit`: Memory limit in MB for processing
+- `--debug`: Enable debug logging
+
+The scoring system prioritizes:
+- Sections with high value for ML/LLM training
+- Rich narrative content from healthcare professionals
+- Clinical reasoning and decision-making
+- Detailed medical assessments and observations
+- Combined structured and unstructured data
 
 ### Step 4: Match Patients with Records
 Match patients from the most information-rich CCDA files with OpenSearch records and check their glucose data:
@@ -191,9 +214,6 @@ The script uses:
 - DynamoDB in us-east-1 for glucose data
 - S3 in us-west-2 for CSV storage
 - Temporary local storage for CSV generation
-
-
-
 
 ### Optional Step: Reformat Selected Files for Sanity Check
 Reformat the most information-rich files for better readability:
