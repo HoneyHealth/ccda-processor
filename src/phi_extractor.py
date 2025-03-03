@@ -68,9 +68,6 @@ def extract_phi_from_ccda(file_path: str) -> Dict[str, Any]:
         if patient_role is None:
             return phi_data
         
-        if patient_role is None:
-            return phi_data
-        
         # Extract patient identifiers
         extract_patient_identifiers(patient_role, phi_data, ns_uri)
         
