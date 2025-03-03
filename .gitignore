@@ -95,6 +95,8 @@ ENV/
 # Project specific
 input/ccda/*
 !input/ccda/.gitkeep
+!input/ccda/to_process/
+!input/ccda/to_process/*
 output/analysis/metrics/*
 !output/analysis/metrics/.gitkeep
 output/analysis/reports/*
